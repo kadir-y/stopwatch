@@ -7,12 +7,12 @@
             <div class="text-medium-emphasis text-h4">{{ laps.length > 1 ? displayLapTime : '00 : 00 .00' }}</div>
           </div>
           <div class="d-flex justify-space-evenly pb-12">
-            <template v-if="!stopped && !running">
+            <template v-if="!stopped && !isStarted">
               <v-btn class="me-2 rounded-pill" size="x-large" @click="startHandler" color="deep-purple-darken-3">Start</v-btn>
               <v-btn class="rounded-pill" size="x-large"  disabled>Lap</v-btn>
             </template>
 
-            <template v-if="!stopped && running">
+            <template v-if="!stopped && isStarted">
               <v-btn class="rounded-pill" size="x-large" color="red-accent-4" @click="stopHandler">Stop</v-btn>
               <v-btn class="rounded-pill" size="x-large" @click="lapHandler">Lap</v-btn>
             </template>
@@ -55,7 +55,7 @@ export default {
       displayOverallTime: '00 : 00 .00',
       displayLapTime: '00 : 00 .00',
       overallTime: 0,
-      running: false,
+      isStarted: false,
       stopped: false,
       table: {
         headers: [
@@ -91,54 +91,63 @@ export default {
         (' .' + (miliseconds < 100 ? '0' + miliseconds.toString().slice(0, 1) : miliseconds.toString().slice(0, 2)))
       
     },
-    runStopwatachInterval () {
+    displayStopwatch () {
+      const lastLap = this.laps.at(-1)
+      const lastLog = lastLap.logs.at(-1)
+      const lastLogElapsedTime = Date.now() - lastLog.startTime
+      this.displayLapTime = this.fitToTime(lastLap.lapTime + lastLogElapsedTime)
+      this.displayOverallTime = this.fitToTime(this.overallTime + lastLogElapsedTime)
+    },
+    runStopwatchInterval () {
       this.stopwatchInterval = setInterval(() => {
-        const lastLap = this.laps.at(-1)
-        const lastLog = lastLap.logs.at(-1)
-        const lastLogElapsedTime = Date.now() - lastLog.startTime
-        this.displayLapTime = this.fitToTime(lastLap.lapTime + lastLogElapsedTime)
-        this.displayOverallTime = this.fitToTime(this.overallTime + lastLogElapsedTime)
+        this.displayStopwatch()
       }, 50)
     },
-    pauseStopwatachInterval () {
+    pauseStopwatchInterval () {
       clearInterval(this.stopwatchInterval)
     },
     // handlers
     startHandler () {
       this.addLap()
-      this.runStopwatachInterval()
-      this.running = true
+      this.runStopwatchInterval()
+      this.isStarted = true
+
+      this.saveToHistory()
     },
     stopHandler () {
       this.stopped = true
 
       this.endTheLog()
-      this.pauseStopwatachInterval()
+      this.pauseStopwatchInterval()
+
+      this.saveToHistory()
     },
     resetHandler () {
       this.stopped = false
-      this.running = false
-
-      // this.saveLapsToHistory()
-      // when you use saveLapsToHistory function finishToLap function will necessary
-      // this.finishToLap()
+      this.isStarted = false
 
       this.laps = []
       this.overallTime = 0
 
       this.displayOverallTime = this.fitToTime(0)
       this.displayLapTime= this.fitToTime(0)
+
+      this.saveToHistory()
     },
     resumeHandler () {
       this.stopped = false
 
       this.addLog()
-      this.runStopwatachInterval()
+      this.runStopwatchInterval()
+
+      this.saveToHistory()
     },
     lapHandler () {
       this.endTheLog()
       this.finishToLap()
       this.addLap()
+
+      this.saveToHistory()
     },   
     addLap () {
       const index = this.laps.length + 1 
@@ -146,7 +155,7 @@ export default {
         index: index >= 10 ? index : `0${index}`,  
         logs: [{ startTime: Date.now() }],
         lapTime: 0
-      }) 
+      })
     },
     finishToLap () {
       this.laps.at(-1).overallTime = this.overallTime
@@ -165,11 +174,38 @@ export default {
       lastLap.lapTime += lastLog.endTime - lastLog.startTime
       this.overallTime += lastLog.endTime - lastLog.startTime
     },
-    saveLapsToHistory () {
-      const stopwatchHistory = JSON.parse(localStorage.getItem("stopwatchHistory"))
-      if (stopwatchHistory.length >= 50) stopwatchHistory.shift() 
-      stopwatchHistory.push(this.laps)
-      localStorage.setItem("stopwatchHistory", JSON.stringify(stopwatchHistory))
+    saveToHistory () {
+      if (this.laps.length >= 50) this.laps.shift() 
+      
+      const unsavedHistory = {
+        overallTime: this.overallTime,
+        displayOverallTime: this.displayOverallTime,
+        displayLapTime: this.displayLapTime,
+        isStarted: this.isStarted,
+        stopped: this.stopped,
+        laps: this.laps
+      }
+      localStorage.setItem("stopwatchHistory", JSON.stringify(unsavedHistory))
+    },
+    loadFromHistory () {
+      // check history and create if not created 
+      const historyJSON = localStorage.getItem("stopwatchHistory")
+      if (historyJSON) {
+        // main load process
+        const parsedHistory = JSON.parse(historyJSON) 
+        this.overallTime = parsedHistory.overallTime || 0
+        this.displayOverallTime = parsedHistory.displayOverallTime || this.fitToTime(0)
+        this.displayLapTime = parsedHistory.displayLapTime || this.fitToTime(0)
+        this.isStarted = parsedHistory.isStarted || false
+        this.stopped = parsedHistory.stopped || false
+        this.laps = parsedHistory.laps || []
+        if (!parsedHistory.stopped && parsedHistory.isStarted) {
+          this.runStopwatchInterval()
+        } else {
+          // if you use after mounted the page this line can be usefull, otherwise not necessary at mounted
+          this.pauseStopwatchInterval()
+        }
+      }
     }
   },
   computed: {
@@ -194,9 +230,7 @@ export default {
     }
   },
   mounted () {
-    // check history and create if not created 
-    // const stopwatchHistory = localStorage.getItem("stopwatchHistory")
-    // if (!stopwatchHistory) localStorage.setItem("stopwatchHistory", "[]")
+    this.loadFromHistory();
   }
 }
 </script>
