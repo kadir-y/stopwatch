@@ -74,7 +74,7 @@ or
 
 To build your project for production, use:
 
-```bash
+```
 yarn build
 ```
 
